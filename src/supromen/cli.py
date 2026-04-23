@@ -5,7 +5,7 @@ from __future__ import annotations
 import json as jsonlib
 import sys
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -16,6 +16,7 @@ from rich.table import Table
 from .auth import AuthError, check_session, login
 from .client import BookedClient
 from .config import ConfigError, Settings, load_settings
+from .my_reservations import fetch_my_reservations
 from .openings import find_openings
 from .schedule import ScheduleView, fetch_schedule
 
@@ -329,6 +330,74 @@ def schedule_openings(
         table.add_row(w.date, day_name, s_hm, e_hm, f"{w.duration_hours:.2f}")
     console.print(table)
     console.print(f"[dim]Total listed:[/] {total:.2f} h across {len(windows)} window(s).")
+
+
+@schedule_app.command("mine")
+def schedule_mine(
+    from_date: Optional[str] = typer.Option(
+        None, "--from", help="Start date (YYYY-MM-DD). Defaults to today."
+    ),
+    to_date: Optional[str] = typer.Option(
+        None, "--to", help="End date (YYYY-MM-DD, inclusive). Defaults to end of the start month."
+    ),
+    upcoming_days: Optional[int] = typer.Option(
+        None,
+        "--upcoming",
+        min=0,
+        help="Shortcut: list from today through today+N days (overrides --from/--to).",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+    base_url: Optional[str] = typer.Option(None, envvar="SUPROMEN_BASE_URL"),
+    cookie_file: Optional[Path] = typer.Option(None, envvar="SUPROMEN_COOKIE_FILE"),
+) -> None:
+    """List the logged-in user's reservations in a date range."""
+    if upcoming_days is not None:
+        start = date.today()
+        end = start + timedelta(days=upcoming_days)
+    else:
+        start = _parse_date(from_date) if from_date else date.today()
+        end = _parse_date(to_date) if to_date else _end_of_month(start)
+    if end < start:
+        _fail(f"--to ({end}) is before --from ({start}).")
+
+    settings = _settings(None, None, base_url, cookie_file)
+    with BookedClient(settings) as client:
+        try:
+            view = fetch_my_reservations(client, start, end)
+        except AuthError as e:
+            _fail(str(e))
+        except RuntimeError as e:
+            _fail(str(e))
+
+    if json_out:
+        typer.echo(jsonlib.dumps(view.to_dict(), indent=2))
+        return
+
+    header = f"My reservations  ({view.begin} .. {view.end}, userId={view.user_id})"
+    console.print(f"[bold]{header}[/]")
+
+    if not view.bookings:
+        console.print("[yellow]No reservations in that range.[/]")
+        return
+
+    table = Table(show_lines=False)
+    table.add_column("Date")
+    table.add_column("Start")
+    table.add_column("End")
+    table.add_column("Resource")
+    table.add_column("Label", overflow="fold")
+    table.add_column("Ref")
+    for b in view.bookings:
+        rlabel = b.resource_name or b.resource_id or "-"
+        table.add_row(
+            b.start_date or (b.start or "")[:10] or "-",
+            b.start_time or b.start or "-",
+            b.end_time or b.end or "-",
+            rlabel,
+            b.title or "",
+            b.reference_number or "-",
+        )
+    console.print(table)
 
 
 if __name__ == "__main__":

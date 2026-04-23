@@ -67,6 +67,10 @@ uv run supromen schedule show --date 2026-03-29
 # Same, as JSON for scripting.
 uv run supromen schedule show --date 2026-03-29 --json
 
+# List your own reservations (auto-detects userId from the session).
+uv run supromen schedule mine --upcoming 30
+uv run supromen schedule mine --from 2026-04-23 --to 2026-05-23 --json
+
 # Drop the local cookie jar (does not invalidate the server session).
 uv run supromen auth logout
 ```

@@ -124,7 +124,7 @@ def _format_date(d: date) -> str:
     return d.isoformat()
 
 
-def _ensure_authenticated(html: str) -> None:
+def ensure_authenticated(html: str) -> None:
     if _looks_like_login_page(html):
         raise AuthError(
             "Not authenticated. Run `supromen auth login` first (or pass --email/--password)."
@@ -158,7 +158,7 @@ def _slot_states(classes: list[str]) -> list[str]:
     return [c for c in classes if c in SLOT_STATE_CLASSES]
 
 
-def _is_json_response(text: str) -> bool:
+def is_json_response(text: str) -> bool:
     s = text.lstrip()
     return bool(s) and s[0] in "{["
 
@@ -190,7 +190,7 @@ def _epoch_to_iso(value) -> str | None:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _booking_from_api(obj: object, resource_map: dict[str, str] | None = None) -> Booking | None:
+def booking_from_api(obj: object, resource_map: dict[str, str] | None = None) -> Booking | None:
     if not isinstance(obj, dict):
         return None
     o = obj
@@ -241,7 +241,7 @@ def _booking_from_api(obj: object, resource_map: dict[str, str] | None = None) -
     )
 
 
-def _parse_reservations_json(
+def parse_reservations_json(
     text: str, resource_map: dict[str, str] | None = None
 ) -> tuple[list[Booking], str | None]:
     data = json.loads(text)
@@ -259,7 +259,7 @@ def _parse_reservations_json(
     for item in raw_list:
         if isinstance(item, dict) and item.get("IsBuffer") is True:
             continue
-        b = _booking_from_api(item, resource_map=resource_map)
+        b = booking_from_api(item, resource_map=resource_map)
         if b is not None:
             bookings.append(b)
     last_s = str(last) if last is not None else None
@@ -344,7 +344,7 @@ def fetch_schedule(client: BookedClient, target: date) -> ScheduleView:
         raise RuntimeError(f"Failed to fetch schedule shell for {sd}: {e}") from e
     if shell.status_code >= 400:
         raise RuntimeError(f"Schedule shell returned HTTP {shell.status_code}")
-    _ensure_authenticated(shell.text)
+    ensure_authenticated(shell.text)
 
     shell_tree = HTMLParser(shell.text)
     embedded = _extract_embedded_resources(shell.text)
@@ -371,13 +371,13 @@ def fetch_schedule(client: BookedClient, target: date) -> ScheduleView:
     bookings: list[Booking] = []
     last_refresh: str | None = None
 
-    if _is_json_response(grid.text):
-        bookings, last_refresh = _parse_reservations_json(grid.text, resource_map=resource_map)
+    if is_json_response(grid.text):
+        bookings, last_refresh = parse_reservations_json(grid.text, resource_map=resource_map)
         bookings = [b for b in bookings if _booking_overlaps(b, sd)]
     else:
         resources = _parse_grid(grid.text)
 
-    if not resources and not _is_json_response(grid.text):
+    if not resources and not is_json_response(grid.text):
         resources = _parse_grid(shell.text)
 
     view = ScheduleView(

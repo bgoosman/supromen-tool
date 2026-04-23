@@ -1,0 +1,8 @@
+# Copy to .env and fill in. Never commit real credentials.
+SUPROMEN_BASE_URL=https://supromen.bookedscheduler.io
+SUPROMEN_EMAIL=you@example.com
+SUPROMEN_PASSWORD=replace-me
+
+# Optional: where to persist the session cookie jar between invocations.
+# Defaults to ~/.supromen/cookies.txt when unset.
+# SUPROMEN_COOKIE_FILE=~/.supromen/cookies.txt

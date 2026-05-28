@@ -7,10 +7,32 @@ The site's public REST API (`/Web/Services`) is currently disabled on this host,
 authenticates through the normal web login and fetches the schedule page plus its AJAX
 reservation grid. That internal contract is narrow but stable across Booked 4.1.x.
 
+## Quick start
+
+Requires Python 3.9 or newer and **[uv](https://docs.astral.sh/uv/)**.
+
+```bash
+git clone git@github.com:bgoosman/supromen-tool.git
+cd supromen-tool
+
+# Build/install the supromen command from this source checkout.
+uv tool install --force .
+supromen --help
+
+# Configure credentials, then log in once to create the local cookie jar.
+cp .env.example .env
+$EDITOR .env
+supromen auth login
+```
+
+The installed `supromen` command is source-built through Python packaging and uv. It is not a
+standalone native executable; rerun `uv tool install --force .` after changing dependencies,
+bumping the version, or pulling source updates you want reflected in the command on your `PATH`.
+
 ## Install
 
-Requires Python 3.9 or newer. This project uses **[uv](https://docs.astral.sh/uv/)** for
-environments and installs; see the [installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+This project uses uv for environments and installs; see the
+[installation guide](https://docs.astral.sh/uv/getting-started/installation/).
 
 From the repository root:
 
@@ -30,6 +52,25 @@ uv run supromen --help
 
 If you prefer an activated shell, use `source .venv/bin/activate` (Windows:
 `.venv\Scripts\activate`) and run `supromen` directly.
+
+### Install the `supromen` command on PATH
+
+For day-to-day use, install the CLI as a source-built tool managed by uv. This
+drops a `supromen` executable into `~/.local/bin` (make sure that's on your
+`PATH`) backed by an isolated venv:
+
+```bash
+just install
+# or directly:
+uv tool install --force .
+```
+
+After editing dependencies or bumping the version, rerun `just install` (alias:
+`just upgrade`) to refresh the installed command. To remove it:
+
+```bash
+just uninstall
+```
 
 ## Configure
 
@@ -98,8 +139,15 @@ out of scope for v1.
 ## Development
 
 ```bash
-uv run pytest
+just dev     # uv sync --extra dev
+just test    # uv run pytest
+just lint    # uv run ruff check .
+just check   # run lint and tests
+just build   # uv build
+just fmt     # uv run ruff format .
 ```
+
+Run `just` with no arguments to list every recipe.
 
 Tests use [`pytest-httpx`](https://pypi.org/project/pytest-httpx/) to mock the Booked
 endpoints; no network traffic or real credentials are required.

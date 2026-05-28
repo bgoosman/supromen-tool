@@ -23,11 +23,9 @@ from datetime import date, datetime
 import httpx
 from selectolax.parser import HTMLParser, Node
 
-from .auth import AuthError, _looks_like_login_page
 from .client import BookedClient
 from .schedule import (
     Booking,
-    booking_from_api,
     ensure_authenticated,
     is_json_response,
     parse_reservations_json,

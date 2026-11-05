@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added `schedule reserve` to preview and book reservations (dry run unless `--yes`).
+
 ## 0.1.0 - 2026-05-28
 
 - Initial source release of the `supromen` CLI.

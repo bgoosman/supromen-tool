@@ -112,6 +112,12 @@ uv run supromen schedule show --date 2026-03-29 --json
 uv run supromen schedule mine --upcoming 30
 uv run supromen schedule mine --from 2026-04-23 --to 2026-05-23 --json
 
+# Preview bookings (dry run: checks availability, books nothing).
+uv run supromen schedule reserve 2026-11-11@12:00-15:00 2026-11-12@12:00-15:00
+
+# Book them. Every slot must pass the check or nothing is booked.
+uv run supromen schedule reserve 2026-11-11@12:00-15:00 2026-11-12@12:00-15:00 --title Ben --yes
+
 # Drop the local cookie jar (does not invalidate the server session).
 uv run supromen auth logout
 ```
@@ -129,12 +135,19 @@ uv run supromen auth logout
    If the grid response is **HTML**, we parse `<tr>` / `<td class="slot ...">` rows and slot
    state from CSS classes (`reservable`, `reserved`, `mine`, …) and `data-start` / `data-end`.
 
-## Extending to bookings
+## Bookings
 
-The CLI is structured so reservation create/cancel/modify can be added later behind a
-subcommand group. Those flows hit `/Web/reservation.php` and `/Web/ajax/*.php` endpoints
-and require the CSRF token embedded in the schedule shell page. They are intentionally
-out of scope for v1.
+`schedule reserve` uses the JSON API behind Booked 4.2's React reservation page:
+
+1. Scrape `scheduleId` and the resource id from the schedule shell, and the `const csrf`
+   token from `/Web/reservation/?rid=..&sid=..&rd=..`.
+2. `GET /Web/api/resources.php?api=check-availability` returns the clashing resource ids.
+3. `GET /Web/api/reservation.php?api=load` returns a ready-to-save reservation template.
+   The CLI refuses the slot if the server's start/end differ from what you asked for.
+4. With `--yes` only: `POST /Web/api/reservation.php?action=create` (multipart `request`
+   JSON plus `CSRF_TOKEN`, `BROWSER_TIMEZONE` and an `X-Csrf-Token` header).
+
+Cancelling and editing reservations are not implemented yet.
 
 ## Development
 

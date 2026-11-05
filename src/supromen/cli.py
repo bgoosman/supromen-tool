@@ -18,6 +18,13 @@ from .client import BookedClient
 from .config import ConfigError, Settings, load_settings
 from .my_reservations import fetch_my_reservations
 from .openings import find_openings
+from .reserve import (
+    ReserveError,
+    check_slot,
+    create_reservation,
+    open_context,
+    parse_slot,
+)
 from .schedule import ScheduleView, fetch_schedule
 
 app = typer.Typer(
@@ -398,6 +405,123 @@ def schedule_mine(
             b.reference_number or "-",
         )
     console.print(table)
+
+
+@schedule_app.command("reserve")
+def schedule_reserve(
+    slots: list[str] = typer.Argument(
+        ...,
+        metavar="SLOT...",
+        help="One or more slots as YYYY-MM-DD@HH:MM-HH:MM (24h, local), e.g. 2026-11-11@12:00-15:00.",
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Actually book. Without this flag nothing is reserved."
+    ),
+    title: Optional[str] = typer.Option(None, "--title", help="Reservation title shown on the schedule."),
+    resource_id: Optional[str] = typer.Option(
+        None,
+        "--resource-id",
+        "-r",
+        help="Resource ID to book. Defaults to the sole resource if there is only one.",
+    ),
+    tz_name: str = typer.Option(
+        "America/New_York", "--tz", help="IANA timezone the slot times are written in."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+    base_url: Optional[str] = typer.Option(None, envvar="SUPROMEN_BASE_URL"),
+    cookie_file: Optional[Path] = typer.Option(None, envvar="SUPROMEN_COOKIE_FILE"),
+) -> None:
+    """Preview, then book, one or more reservations.
+
+    Without --yes this is a dry run: each slot is checked for availability and
+    validated against the server, and nothing is booked. With --yes every slot
+    must pass the check first; if any fails, nothing is booked.
+    """
+    try:
+        parsed = sorted({parse_slot(raw) for raw in slots}, key=lambda s: (s.day, s.start))
+    except ValueError as e:
+        _fail(str(e))
+
+    settings = _settings(None, None, base_url, cookie_file)
+    with BookedClient(settings) as client:
+        try:
+            ctx = open_context(client, day=parsed[0].day, resource_id=resource_id, tz_name=tz_name)
+            checks = [check_slot(client, ctx, slot) for slot in parsed]
+        except (AuthError, ReserveError) as e:
+            _fail(str(e))
+
+        blocked = [c for c in checks if not c.available]
+        total = sum(c.slot.hours for c in checks)
+        results = []
+        if yes and not blocked:
+            for c in checks:
+                try:
+                    result = create_reservation(client, ctx, c, title=title)
+                except (AuthError, ReserveError) as e:
+                    _fail(f"{c.slot.system_start}: {e}")
+                results.append(result)
+                if not result.success:
+                    break
+
+    if json_out:
+        payload = {
+            "resource_id": ctx.resource_id,
+            "resource_name": ctx.resource_name,
+            "dry_run": not yes,
+            "total_hours": round(total, 2),
+            "slots": [c.to_dict() for c in checks],
+            "results": [r.to_dict() for r in results],
+        }
+        typer.echo(jsonlib.dumps(payload, indent=2))
+        if (yes and blocked) or any(not r.success for r in results):
+            raise typer.Exit(code=1)
+        return
+
+    mode = "Booking" if yes else "Preview (dry run)"
+    console.print(f"[bold]{mode} - {ctx.resource_name or 'resource ' + ctx.resource_id}[/]")
+    booked = {r.slot: r for r in results}
+    table = Table(show_lines=False)
+    table.add_column("Date")
+    table.add_column("Day")
+    table.add_column("Start")
+    table.add_column("End")
+    table.add_column("Hours", justify="right")
+    table.add_column("Status")
+    for c in checks:
+        r = booked.get(c.slot)
+        if r is not None and r.success:
+            status = f"[green]booked {r.reference_number or ''}[/]".strip()
+            if r.requires_approval:
+                status += " [yellow](pending approval)[/]"
+        elif r is not None:
+            status = f"[red]failed: {'; '.join(r.errors) or 'unknown error'}[/]"
+        elif c.available:
+            status = "[green]available[/]" if not yes else "[dim]not attempted[/]"
+        else:
+            status = f"[red]{c.problem}[/]"
+        table.add_row(
+            c.slot.day.isoformat(),
+            c.slot.day.strftime("%a"),
+            c.slot.start.strftime("%H:%M"),
+            c.slot.end.strftime("%H:%M"),
+            f"{c.slot.hours:.2f}",
+            status,
+        )
+    console.print(table)
+    console.print(f"[dim]Total:[/] {total:.2f} h across {len(checks)} slot(s).")
+
+    if blocked:
+        console.print(
+            f"[red]{len(blocked)} slot(s) can't be booked.[/] Remove or change them"
+            + (" - nothing was booked." if yes else ".")
+        )
+        if yes:
+            raise typer.Exit(code=1)
+    elif not yes:
+        console.print("[yellow]Nothing booked.[/] Re-run with --yes to reserve these slots.")
+    elif any(not r.success for r in results):
+        console.print("[red]Stopped at the first failed booking.[/] Earlier slots above stay booked.")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
